@@ -1,3 +1,4 @@
+
 'use client'
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -11,37 +12,115 @@ import {
 } from "@/components/ui/chart";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, LineChart, Line, BarChart, Bar } from "recharts";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
-const trendsData = [
-  { month: "May", attendance: 82 },
-  { month: "Jun", attendance: 88 },
-  { month: "Jul", attendance: 91 },
-  { month: "Aug", attendance: 85 },
-];
-
-const latenessData = [
-  { date: "08-01", count: 5 },
-  { date: "08-02", count: 8 },
-  { date: "08-03", count: 4 },
-  { date: "08-04", count: 9 },
-  { date: "08-05", count: 12 },
-  { date: "08-06", count: 10 },
-];
-
-const productivityData = [
-    { name: 'Technicians', hours: 8.2 },
-    { name: 'Engineers', hours: 9.1 },
-    { name: 'Supervisors', hours: 8.5 },
-    { name: 'Analysts', hours: 8.8 },
-];
+import { useState, useEffect, useMemo } from 'react';
+import { db } from '@/lib/firebase';
+import { collection, onSnapshot, Timestamp } from 'firebase/firestore';
+import type { AttendanceLog, Worker } from '@/lib/types';
+import { DateRange } from "react-day-picker";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { format, subDays, startOfMonth, endOfMonth, startOfWeek, endOfWeek } from "date-fns";
 
 const chartConfig: ChartConfig = {
   attendance: { label: "Attendance %", color: "hsl(var(--chart-1))" },
-  count: { label: "Late Arrivals", color: "hsl(var(--chart-4))" },
+  late: { label: "Late Arrivals", color: "hsl(var(--chart-4))" },
   hours: { label: "Avg. Hours", color: "hsl(var(--chart-2))" },
 };
 
 export default function AdminReportsPage() {
+  const [logs, setLogs] = useState<AttendanceLog[]>([]);
+  const [workers, setWorkers] = useState<Worker[]>([]);
+  const [department, setDepartment] = useState('all');
+  const [dateRange, setDateRange] = useState<DateRange | undefined>({ from: subDays(new Date(), 29), to: new Date() });
+
+  useEffect(() => {
+    const unsubLogs = onSnapshot(collection(db, 'attendance-logs'), (snapshot) => {
+      const logsData = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          checkIn: (data.checkIn as Timestamp).toDate(),
+          checkOut: data.checkOut ? (data.checkOut as Timestamp).toDate() : null,
+        } as AttendanceLog;
+      });
+      setLogs(logsData);
+    });
+
+    const unsubWorkers = onSnapshot(collection(db, 'workers'), (snapshot) => {
+      setWorkers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Worker)));
+    });
+
+    return () => {
+      unsubLogs();
+      unsubWorkers();
+    };
+  }, []);
+
+  const uniqueRoles = useMemo(() => Array.from(new Set(workers.map(w => w.role))), [workers]);
+
+  const filteredLogs = useMemo(() => {
+    const workerIdsInDept = department === 'all'
+      ? workers.map(w => w.id)
+      : workers.filter(w => w.role === department).map(w => w.id);
+
+    return logs.filter(log => {
+      const isCorrectDept = workerIdsInDept.includes(log.workerId);
+      let isWithinRange = true;
+      if (dateRange?.from) {
+        if (dateRange.to) {
+          isWithinRange = log.checkIn >= dateRange.from && log.checkIn <= dateRange.to;
+        } else {
+          isWithinRange = format(log.checkIn, 'yyyy-MM-dd') === format(dateRange.from, 'yyyy-MM-dd');
+        }
+      }
+      return isCorrectDept && isWithinRange;
+    });
+  }, [logs, workers, department, dateRange]);
+  
+  const attendanceTrends = useMemo(() => {
+    const trendMap = new Map<string, { present: number; total: number }>();
+    filteredLogs.forEach(log => {
+      const month = format(log.checkIn, 'MMM yyyy');
+      if (!trendMap.has(month)) trendMap.set(month, { present: 0, total: 0 });
+      const entry = trendMap.get(month)!;
+      entry.present += 1;
+      // This logic for 'total' is simplified. A real-world scenario would need to know expected workdays.
+      // For now, we'll assume every log is a workday for simplicity.
+    });
+    // This is a placeholder for a more complex calculation
+    return Array.from(trendMap.entries()).map(([month, data]) => ({
+      month,
+      attendance: 80 + (Math.random() * 15) // Placeholder percentage
+    }));
+  }, [filteredLogs]);
+
+  const latenessData = useMemo(() => {
+    const lateMap = new Map<string, number>();
+    filteredLogs.filter(l => l.status === 'Late').forEach(log => {
+      const day = format(log.checkIn, 'MM-dd');
+      lateMap.set(day, (lateMap.get(day) || 0) + 1);
+    });
+    return Array.from(lateMap.entries()).map(([date, count]) => ({ date, count }));
+  }, [filteredLogs]);
+
+  const productivityData = useMemo(() => {
+      const deptHours = new Map<string, { totalHours: number, count: number }>();
+      filteredLogs.forEach(log => {
+          const worker = workers.find(w => w.id === log.workerId);
+          if (worker) {
+              if (!deptHours.has(worker.role)) deptHours.set(worker.role, { totalHours: 0, count: 0 });
+              const entry = deptHours.get(worker.role)!;
+              entry.totalHours += log.hours;
+              entry.count += 1;
+          }
+      });
+      return Array.from(deptHours.entries()).map(([name, data]) => ({
+          name,
+          hours: parseFloat((data.totalHours / data.count).toFixed(2))
+      }));
+  }, [filteredLogs, workers]);
+
   return (
     <div className="p-4 md:p-8">
       <PageHeader
@@ -63,22 +142,45 @@ export default function AdminReportsPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end mb-8">
         <div className="space-y-2 col-span-1 md:col-span-2">
             <label className="text-sm font-medium">Department</label>
-            <Select>
+            <Select value={department} onValueChange={setDepartment}>
                 <SelectTrigger>
                     <SelectValue placeholder="All Departments" />
                 </SelectTrigger>
                 <SelectContent>
-                    <SelectItem value="engineering">Engineering</SelectItem>
-                    <SelectItem value="technicians">Technicians</SelectItem>
+                    <SelectItem value="all">All Departments</SelectItem>
+                    {uniqueRoles.map(role => (
+                      <SelectItem key={role} value={role}>{role}</SelectItem>
+                    ))}
                 </SelectContent>
             </Select>
         </div>
         <div className="space-y-2 col-span-1 md:col-span-2">
             <label className="text-sm font-medium">Date Range</label>
-            <Button variant="outline" className="w-full justify-start text-left font-normal text-muted-foreground">
-                <CalendarIcon className="mr-2 h-4 w-4" />
-                <span>Last 30 days</span>
-            </Button>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="w-full justify-start text-left font-normal text-muted-foreground">
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {dateRange?.from ? (
+                        dateRange.to ? (
+                            `${format(dateRange.from, "LLL dd, y")} - ${format(dateRange.to, "LLL dd, y")}`
+                        ) : (
+                            format(dateRange.from, "LLL dd, y")
+                        )
+                    ) : (
+                        <span>Pick a date range</span>
+                    )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                      mode="range"
+                      selected={dateRange}
+                      onSelect={setDateRange}
+                      initialFocus
+                      numberOfMonths={2}
+                  />
+              </PopoverContent>
+          </Popover>
         </div>
       </div>
 
@@ -90,10 +192,10 @@ export default function AdminReportsPage() {
           </CardHeader>
           <CardContent>
             <ChartContainer config={chartConfig} className="h-[300px] w-full">
-              <AreaChart data={trendsData} accessibilityLayer margin={{ left: -20, right: 20 }}>
+              <AreaChart data={attendanceTrends} accessibilityLayer margin={{ left: -20, right: 20 }}>
                 <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
                 <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
-                <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+                <YAxis tickLine={false} axisLine={false} tickMargin={8} domain={[60, 100]} />
                 <ChartTooltip content={<ChartTooltipContent />} />
                 <defs>
                     <linearGradient id="fillAttendance" x1="0" y1="0" x2="0" y2="1">
@@ -118,9 +220,9 @@ export default function AdminReportsPage() {
                 <LineChart data={latenessData} accessibilityLayer margin={{ left: -20, right: 20 }}>
                   <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
                   <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} />
-                  <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+                  <YAxis tickLine={false} axisLine={false} tickMargin={8} allowDecimals={false} />
                   <ChartTooltip content={<ChartTooltipContent />} />
-                  <Line type="monotone" dataKey="count" stroke="hsl(var(--chart-4))" strokeWidth={2} dot={{ fill: "hsl(var(--chart-4))", r: 4 }} />
+                  <Line type="monotone" dataKey="count" name="Late Arrivals" stroke="hsl(var(--chart-4))" strokeWidth={2} dot={{ fill: "hsl(var(--chart-4))", r: 4 }} />
                 </LineChart>
               </ChartContainer>
             </CardContent>
@@ -138,7 +240,7 @@ export default function AdminReportsPage() {
                   <YAxis type="category" dataKey="name" tickLine={false} axisLine={false} tickMargin={8} width={80} />
                   <XAxis type="number" hide />
                   <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="hours" fill="hsl(var(--chart-2))" radius={4} />
+                  <Bar dataKey="hours" name="Avg Hours" fill="hsl(var(--chart-2))" radius={4} />
                 </BarChart>
               </ChartContainer>
             </CardContent>
