@@ -19,12 +19,12 @@ import type { AttendanceLog, Worker } from '@/lib/types';
 import { DateRange } from "react-day-picker";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { format, subDays, startOfMonth, endOfMonth, startOfWeek, endOfWeek } from "date-fns";
+import { format, subDays, eachDayOfInterval, startOfDay } from "date-fns";
 
 const chartConfig: ChartConfig = {
   attendance: { label: "Attendance %", color: "hsl(var(--chart-1))" },
   late: { label: "Late Arrivals", color: "hsl(var(--chart-4))" },
-  hours: { label: "Avg. Hours", color: "hsl(var(--chart-2))" },
+  hours: { label: "Total Hours", color: "hsl(var(--chart-2))" },
 };
 
 export default function AdminReportsPage() {
@@ -58,42 +58,49 @@ export default function AdminReportsPage() {
   }, []);
 
   const uniqueRoles = useMemo(() => Array.from(new Set(workers.map(w => w.role))), [workers]);
+  
+  const workersInDept = useMemo(() => {
+    if (department === 'all') return workers;
+    return workers.filter(w => w.role === department);
+  }, [workers, department]);
 
   const filteredLogs = useMemo(() => {
-    const workerIdsInDept = department === 'all'
-      ? workers.map(w => w.id)
-      : workers.filter(w => w.role === department).map(w => w.id);
+    const workerIdsInDept = workersInDept.map(w => w.id);
 
     return logs.filter(log => {
       const isCorrectDept = workerIdsInDept.includes(log.workerId);
       let isWithinRange = true;
       if (dateRange?.from) {
+        const checkInDate = startOfDay(log.checkIn);
+        const fromDate = startOfDay(dateRange.from);
         if (dateRange.to) {
-          isWithinRange = log.checkIn >= dateRange.from && log.checkIn <= dateRange.to;
+          const toDate = startOfDay(dateRange.to);
+          isWithinRange = checkInDate >= fromDate && checkInDate <= toDate;
         } else {
-          isWithinRange = format(log.checkIn, 'yyyy-MM-dd') === format(dateRange.from, 'yyyy-MM-dd');
+          isWithinRange = checkInDate.getTime() === fromDate.getTime();
         }
       }
       return isCorrectDept && isWithinRange;
     });
-  }, [logs, workers, department, dateRange]);
+  }, [logs, workersInDept, dateRange]);
   
   const attendanceTrends = useMemo(() => {
-    const trendMap = new Map<string, { present: number; total: number }>();
-    filteredLogs.forEach(log => {
-      const month = format(log.checkIn, 'MMM yyyy');
-      if (!trendMap.has(month)) trendMap.set(month, { present: 0, total: 0 });
-      const entry = trendMap.get(month)!;
-      entry.present += 1;
-      // This logic for 'total' is simplified. A real-world scenario would need to know expected workdays.
-      // For now, we'll assume every log is a workday for simplicity.
+    if (!dateRange?.from || !dateRange?.to) return [];
+    
+    const intervalDays = eachDayOfInterval({ start: dateRange.from, end: dateRange.to });
+    const totalWorkersInDept = workersInDept.length;
+
+    if (totalWorkersInDept === 0) return [];
+
+    return intervalDays.map(day => {
+      const dayString = format(day, 'MMM dd');
+      const logsForDay = filteredLogs.filter(log => format(log.checkIn, 'yyyy-MM-dd') === format(day, 'yyyy-MM-dd'));
+      const presentCount = new Set(logsForDay.map(l => l.workerId)).size;
+      const attendance = totalWorkersInDept > 0 ? (presentCount / totalWorkersInDept) * 100 : 0;
+      return { date: dayString, attendance: parseFloat(attendance.toFixed(1)) };
     });
-    // This is a placeholder for a more complex calculation
-    return Array.from(trendMap.entries()).map(([month, data]) => ({
-      month,
-      attendance: 80 + (Math.random() * 15) // Placeholder percentage
-    }));
-  }, [filteredLogs]);
+
+  }, [filteredLogs, dateRange, workersInDept]);
 
   const latenessData = useMemo(() => {
     const lateMap = new Map<string, number>();
@@ -101,25 +108,28 @@ export default function AdminReportsPage() {
       const day = format(log.checkIn, 'MM-dd');
       lateMap.set(day, (lateMap.get(day) || 0) + 1);
     });
-    return Array.from(lateMap.entries()).map(([date, count]) => ({ date, count }));
+    return Array.from(lateMap.entries()).map(([date, count]) => ({ date, "Late Arrivals": count }));
   }, [filteredLogs]);
 
   const productivityData = useMemo(() => {
-      const deptHours = new Map<string, { totalHours: number, count: number }>();
+      const deptHours = new Map<string, number>();
+      
+      const targetWorkers = department === 'all' ? workers : workers.filter(w => w.role === department);
+      const rolesInFilter = Array.from(new Set(targetWorkers.map(w => w.role)));
+      
+      rolesInFilter.forEach(role => deptHours.set(role, 0));
+
       filteredLogs.forEach(log => {
           const worker = workers.find(w => w.id === log.workerId);
-          if (worker) {
-              if (!deptHours.has(worker.role)) deptHours.set(worker.role, { totalHours: 0, count: 0 });
-              const entry = deptHours.get(worker.role)!;
-              entry.totalHours += log.hours;
-              entry.count += 1;
+          if (worker && worker.role) {
+            deptHours.set(worker.role, (deptHours.get(worker.role) || 0) + log.hours);
           }
       });
-      return Array.from(deptHours.entries()).map(([name, data]) => ({
+      return Array.from(deptHours.entries()).map(([name, totalHours]) => ({
           name,
-          hours: parseFloat((data.totalHours / data.count).toFixed(2))
+          hours: parseFloat(totalHours.toFixed(2))
       }));
-  }, [filteredLogs, workers]);
+  }, [filteredLogs, workers, department]);
 
   return (
     <div className="p-4 md:p-8">
@@ -188,14 +198,14 @@ export default function AdminReportsPage() {
         <Card className="bg-card/80">
           <CardHeader>
             <CardTitle as="h3" className="font-headline">Attendance Trends (%)</CardTitle>
-            <CardDescription>Monthly attendance percentage over time.</CardDescription>
+            <CardDescription>Daily attendance percentage for the selected period.</CardDescription>
           </CardHeader>
           <CardContent>
             <ChartContainer config={chartConfig} className="h-[300px] w-full">
               <AreaChart data={attendanceTrends} accessibilityLayer margin={{ left: -20, right: 20 }}>
                 <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
-                <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
-                <YAxis tickLine={false} axisLine={false} tickMargin={8} domain={[60, 100]} />
+                <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} />
+                <YAxis tickLine={false} axisLine={false} tickMargin={8} domain={[0, 100]} unit="%" />
                 <ChartTooltip content={<ChartTooltipContent />} />
                 <defs>
                     <linearGradient id="fillAttendance" x1="0" y1="0" x2="0" y2="1">
@@ -203,7 +213,7 @@ export default function AdminReportsPage() {
                         <stop offset="95%" stopColor="hsl(var(--chart-1))" stopOpacity={0.1}/>
                     </linearGradient>
                 </defs>
-                <Area type="monotone" dataKey="attendance" stroke="hsl(var(--chart-1))" fill="url(#fillAttendance)" />
+                <Area type="monotone" dataKey="attendance" stroke="hsl(var(--chart-1))" fill="url(#fillAttendance)" name="Attendance" unit="%" />
               </AreaChart>
             </ChartContainer>
           </CardContent>
@@ -221,8 +231,8 @@ export default function AdminReportsPage() {
                   <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
                   <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} />
                   <YAxis tickLine={false} axisLine={false} tickMargin={8} allowDecimals={false} />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Line type="monotone" dataKey="count" name="Late Arrivals" stroke="hsl(var(--chart-4))" strokeWidth={2} dot={{ fill: "hsl(var(--chart-4))", r: 4 }} />
+                  <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
+                  <Line type="monotone" dataKey="Late Arrivals" stroke="hsl(var(--chart-4))" strokeWidth={2} dot={{ fill: "hsl(var(--chart-4))", r: 4 }} />
                 </LineChart>
               </ChartContainer>
             </CardContent>
@@ -230,8 +240,8 @@ export default function AdminReportsPage() {
 
           <Card className="bg-card/80">
             <CardHeader>
-              <CardTitle as="h3" className="font-headline">Productivity (Avg. Hours)</CardTitle>
-              <CardDescription>Average hours worked by department.</CardDescription>
+              <CardTitle as="h3" className="font-headline">Productivity (Total Hours)</CardTitle>
+              <CardDescription>Total hours worked by department for the selected period.</CardDescription>
             </CardHeader>
             <CardContent>
               <ChartContainer config={chartConfig} className="h-[300px] w-full">
@@ -239,8 +249,8 @@ export default function AdminReportsPage() {
                   <CartesianGrid horizontal={false} strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
                   <YAxis type="category" dataKey="name" tickLine={false} axisLine={false} tickMargin={8} width={80} />
                   <XAxis type="number" hide />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="hours" name="Avg Hours" fill="hsl(var(--chart-2))" radius={4} />
+                  <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
+                  <Bar dataKey="hours" name="Total Hours" fill="hsl(var(--chart-2))" radius={4} />
                 </BarChart>
               </ChartContainer>
             </CardContent>
