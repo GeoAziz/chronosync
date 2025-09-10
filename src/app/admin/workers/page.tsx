@@ -18,6 +18,7 @@ import { collection, onSnapshot } from 'firebase/firestore';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { deleteWorkerAction } from '@/lib/actions';
 import { useToast } from '@/hooks/use-toast';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const getStatusBadgeVariant = (status: string) => {
   switch (status) {
@@ -36,21 +37,48 @@ const getStatusIndicatorClass = (status: string) => {
     }
 }
 
+function WorkerTableSkeleton() {
+    return (
+        Array.from({ length: 3 }).map((_, i) => (
+            <TableRow key={i}>
+                <TableCell>
+                    <div className="flex items-center gap-3">
+                        <Skeleton className="h-10 w-10 rounded-full" />
+                        <div className='space-y-2'>
+                            <Skeleton className="h-4 w-[150px]" />
+                            <Skeleton className="h-3 w-[200px]" />
+                        </div>
+                    </div>
+                </TableCell>
+                <TableCell className="hidden md:table-cell"><Skeleton className="h-4 w-[100px]" /></TableCell>
+                <TableCell><Skeleton className="h-6 w-[70px] rounded-full" /></TableCell>
+                <TableCell className="text-right"><Skeleton className="h-8 w-8 ml-auto" /></TableCell>
+            </TableRow>
+        ))
+    )
+}
+
 export default function WorkerManagementPage() {
   const [isAddWorkerOpen, setIsAddWorkerOpen] = useState(false);
   const [isEditWorkerOpen, setIsEditWorkerOpen] = useState(false);
   const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState(false);
   const [selectedWorker, setSelectedWorker] = useState<Worker | null>(null);
   const [workers, setWorkers] = useState<Worker[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
   
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'workers'), (snapshot) => {
         const workersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Worker));
         setWorkers(workersData);
+        setIsLoading(false);
+    }, (error) => {
+        console.error("Error fetching workers:", error);
+        setIsLoading(false);
+        toast({ title: "Error", description: "Could not fetch worker data.", variant: "destructive" });
     });
     return () => unsubscribe();
-  }, []);
+  }, [toast]);
 
   const handleEditClick = (worker: Worker) => {
     setSelectedWorker(worker);
@@ -95,43 +123,58 @@ export default function WorkerManagementPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {workers.map((worker) => (
-                <TableRow key={worker.id}>
-                  <TableCell>
-                    <div className="flex items-center gap-3">
-                        <div className="relative">
-                            <Avatar>
-                                <AvatarImage src={`https://picsum.photos/seed/${worker.id}/40/40`} data-ai-hint="profile person" />
-                                <AvatarFallback>{worker.name.charAt(0)}</AvatarFallback>
-                            </Avatar>
-                            <span className={`absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full ${getStatusIndicatorClass(worker.status)} ring-2 ring-background`} />
-                        </div>
-                        <div>
-                            <div className="font-medium">{worker.name}</div>
-                            <div className="text-sm text-muted-foreground">{worker.email}</div>
-                        </div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="hidden md:table-cell">{worker.role}</TableCell>
-                  <TableCell>
-                    <Badge variant={getStatusBadgeVariant(worker.status)}>{worker.status}</Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <MoreHorizontal className="h-4 w-4" />
-                          <span className="sr-only">Actions</span>
+              {isLoading ? (
+                <WorkerTableSkeleton />
+              ) : workers.length > 0 ? (
+                workers.map((worker) => (
+                  <TableRow key={worker.id}>
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                          <div className="relative">
+                              <Avatar>
+                                  <AvatarImage src={`https://picsum.photos/seed/${worker.id}/40/40`} data-ai-hint="profile person" />
+                                  <AvatarFallback>{worker.name.charAt(0)}</AvatarFallback>
+                              </Avatar>
+                              <span className={`absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full ${getStatusIndicatorClass(worker.status)} ring-2 ring-background`} />
+                          </div>
+                          <div>
+                              <div className="font-medium">{worker.name}</div>
+                              <div className="text-sm text-muted-foreground">{worker.email}</div>
+                          </div>
+                      </div>
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell">{worker.role}</TableCell>
+                    <TableCell>
+                      <Badge variant={getStatusBadgeVariant(worker.status)}>{worker.status}</Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon">
+                            <MoreHorizontal className="h-4 w-4" />
+                            <span className="sr-only">Actions</span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => handleEditClick(worker)}>Edit</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleDeleteClick(worker)} className="text-destructive" onSelect={(e) => e.preventDefault()}>Delete</DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                    <TableCell colSpan={4} className="h-60 text-center">
+                        <h3 className="text-xl font-semibold mb-2">No Workers Found</h3>
+                        <p className="text-muted-foreground mb-4">Get started by inviting your first worker.</p>
+                        <Button onClick={() => setIsAddWorkerOpen(true)} className="bg-accent text-accent-foreground hover:bg-accent/90">
+                            <PlusCircle className="mr-2 h-4 w-4" />
+                            Invite Worker
                         </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleEditClick(worker)}>Edit</DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleDeleteClick(worker)} className="text-destructive hover:!text-destructive-foreground">Delete</DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
+                    </TableCell>
                 </TableRow>
-              ))}
+              )}
             </TableBody>
           </Table>
         </CardContent>
@@ -150,10 +193,12 @@ export default function WorkerManagementPage() {
             </AlertDialogHeader>
             <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleDeleteConfirm}>Delete</AlertDialogAction>
+                <AlertDialogAction onClick={handleDeleteConfirm} className="bg-destructive hover:bg-destructive/90">Delete</AlertDialogAction>
             </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>
   );
 }
+
+    
