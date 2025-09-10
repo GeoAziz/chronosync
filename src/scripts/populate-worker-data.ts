@@ -1,18 +1,22 @@
+
 'use server';
 import 'dotenv/config';
 import * as admin from 'firebase-admin';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
+import serviceAccountConfig from '../../serviceAccountKey.json';
+import type { ServiceAccount } from 'firebase-admin';
 
 // Initialize Firebase Admin
 if (!admin.apps.length) {
-  const serviceAccountString = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-  if (!serviceAccountString) {
-    throw new Error('FIREBASE_SERVICE_ACCOUNT_KEY environment variable is not set.');
+  try {
+      const serviceAccount = serviceAccountConfig as ServiceAccount;
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount)
+      });
+  } catch (error) {
+      console.error('Error initializing Firebase Admin SDK:', error);
+      process.exit(1);
   }
-  const serviceAccount = JSON.parse(serviceAccountString);
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
-  });
 }
 
 const db = getFirestore();
