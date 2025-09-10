@@ -64,6 +64,7 @@ export default function WorkerAttendancePage() {
 
             return {
                 ...data,
+                id: doc.id,
                 date: format(checkInDate, 'PPP'),
                 checkIn: format(checkInDate, 'p'),
                 checkOut: checkOutDate ? format(checkOutDate, 'p') : '-',
