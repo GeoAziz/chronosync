@@ -10,7 +10,8 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "create-admin": "tsx src/scripts/create-admin.ts"
+    "create-admin": "tsx src/scripts/create-admin.ts",
+    "populate-worker-data": "tsx src/scripts/populate-worker-data.ts"
   },
   "dependencies": {
     "@genkit-ai/googleai": "^1.14.1",
