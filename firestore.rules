@@ -1,0 +1,57 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions to keep rules DRY
+    function isAuth() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isAuth() && request.auth.token.admin == true;
+    }
+
+    function isOwner(userId) {
+      return isAuth() && request.auth.uid == userId;
+    }
+    
+    // Users collection: Stores basic user info and roles
+    match /users/{userId} {
+      // Admins can manage all user documents
+      // Users can read their own document
+      allow read, write: if isAdmin();
+      allow read: if isOwner(userId);
+    }
+    
+    // Workers collection: Stores detailed worker profiles
+    match /workers/{workerId} {
+      // Admins can read/write all worker documents
+      allow read, write: if isAdmin();
+      
+      // Workers can read their own profile
+      allow read: if isOwner(workerId);
+      
+      // Workers can only update their own 'status' field (for online/offline status)
+      // and cannot change other fields like name, email, or role.
+      allow update: if isOwner(workerId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+    }
+    
+    // Attendance Logs: Stores check-in/check-out records
+    match /attendance-logs/{logId} {
+        // Admins can read/write all attendance logs
+        allow read, write: if isAdmin();
+        
+        // Workers can create their own logs
+        allow create: if isAuth() && request.resource.data.workerId == request.auth.uid;
+        
+        // Workers can read logs belonging to them, but cannot update or delete them.
+        allow read: if isAuth() && resource.data.workerId == request.auth.uid;
+    }
+    
+    // Default deny all other access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
