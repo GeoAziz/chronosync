@@ -39,6 +39,9 @@ export default function LoginPage() {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
+      
+      // Force refresh the token to get custom claims.
+      await user.getIdToken(true);
       const idToken = await user.getIdToken();
 
       const sessionResponse = await fetch('/api/auth/session', {
