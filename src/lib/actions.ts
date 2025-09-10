@@ -109,7 +109,11 @@ export async function deleteWorkerAction(workerId: string) {
 }
 
 
-export async function signInAction({ workerId, workerName }: { workerId: string; workerName: string }) {
+'use server';
+
+export async function signInAction(formData: FormData) {
+    const workerId = formData.get('workerId') as string;
+    const workerName = formData.get('workerName') as string;
     try {
         const now = new Date();
         const checkInHour = now.getHours();
@@ -137,7 +141,9 @@ export async function signInAction({ workerId, workerName }: { workerId: string;
     }
 }
 
-export async function signOutAction({ logId, workerId }: { logId: string, workerId: string }) {
+export async function signOutAction(formData: FormData) {
+    const logId = formData.get('logId') as string;
+    const workerId = formData.get('workerId') as string;
      try {
         const now = new Date();
         const logRef = db.collection('attendance-logs').doc(logId);

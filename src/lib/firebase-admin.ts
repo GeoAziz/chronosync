@@ -1,20 +1,16 @@
 
 import admin from 'firebase-admin';
 import { getApps } from 'firebase-admin/app';
-import dotenv from 'dotenv';
-
-dotenv.config();
+import type { ServiceAccount } from 'firebase-admin';
+// Import service account credentials directly
+import serviceAccountConfig from '../../serviceAccountKey.json';
 
 // This function can be called multiple times, but it will only initialize the app once.
 export function initAdmin() {
   if (!getApps().length) {
     try {
-        const serviceAccountString = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-        if (!serviceAccountString) {
-            throw new Error('FIREBASE_SERVICE_ACCOUNT_KEY environment variable is not set.');
-        }
-        
-        const serviceAccount = JSON.parse(serviceAccountString);
+        // Use the imported service account config
+        const serviceAccount = serviceAccountConfig as ServiceAccount;
 
         admin.initializeApp({
             credential: admin.credential.cert(serviceAccount)

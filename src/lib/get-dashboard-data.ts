@@ -1,0 +1,103 @@
+import { cookies } from 'next/headers';
+import { db, initAdmin } from '@/lib/firebase-admin';
+import admin from 'firebase-admin';
+import { Timestamp } from 'firebase-admin/firestore';
+import type { AttendanceLog, Worker } from '@/lib/types';
+
+initAdmin();
+
+export async function getDashboardData() {
+    const cookieStore = await cookies();
+    const sessionCookie = cookieStore.get('session')?.value;
+    console.log('Session cookie:', sessionCookie ? 'Found' : 'Not found');
+    
+    if (!sessionCookie) {
+        console.error('No session cookie found');
+        return null;
+    }
+
+    try {
+        const decodedClaims = await admin.auth().verifySessionCookie(sessionCookie, true);
+        console.log('Session verified, user ID:', decodedClaims.uid);
+        const workerId = decodedClaims.uid;
+
+        const workerDoc = await db.collection('workers').doc(workerId).get();
+        if (!workerDoc.exists) return null;
+        const worker = { id: workerDoc.id, ...workerDoc.data() } as Worker;
+
+        // Fetch today's attendance log
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+
+        const logsSnapshot = await db.collection('attendance-logs')
+            .where('workerId', '==', workerId)
+            .where('checkIn', '>=', Timestamp.fromDate(today))
+            .where('checkIn', '<', Timestamp.fromDate(tomorrow))
+            .limit(1)
+            .get();
+        
+        let attendanceLog: (AttendanceLog & { id: string }) | null = null;
+        if (!logsSnapshot.empty) {
+            const doc = logsSnapshot.docs[0];
+            const data = doc.data();
+            attendanceLog = {
+                id: doc.id,
+                ...data,
+                checkIn: (data.checkIn as Timestamp).toDate(),
+                checkOut: data.checkOut ? (data.checkOut as Timestamp).toDate() : null,
+            } as AttendanceLog & { id: string };
+        }
+
+        // Calculate attendance streak
+        let streak = 0;
+        let consecutive = true;
+        let currentDate = new Date();
+        currentDate.setHours(0, 0, 0, 0);
+
+        // Check if there is a log for today
+        const todayStart = Timestamp.fromDate(currentDate);
+        const todayEnd = Timestamp.fromMillis(todayStart.toMillis() + 24 * 60 * 60 * 1000);
+        const todayLogSnapshot = await db.collection('attendance-logs')
+            .where('workerId', '==', workerId)
+            .where('checkIn', '>=', todayStart)
+            .where('checkIn', '<', todayEnd)
+            .get();
+        
+        if (!todayLogSnapshot.empty) {
+            streak++;
+        } else {
+            consecutive = false; // No log today, streak must be 0
+        }
+
+        if (consecutive) {
+             for (let i = 1; i < 30; i++) { // Check up to 29 previous days
+                let checkDate = new Date();
+                checkDate.setDate(checkDate.getDate() - i);
+                checkDate.setHours(0,0,0,0);
+                
+                const dayStart = Timestamp.fromDate(checkDate);
+                const dayEnd = Timestamp.fromMillis(dayStart.toMillis() + 24 * 60 * 60 * 1000);
+
+                const streakLogSnapshot = await db.collection('attendance-logs')
+                    .where('workerId', '==', workerId)
+                    .where('checkIn', '>=', dayStart)
+                    .where('checkIn', '<', dayEnd)
+                    .get();
+
+                if (!streakLogSnapshot.empty) {
+                    streak++;
+                } else {
+                    break; // Streak broken
+                }
+            }
+        }
+
+        return { worker, attendanceLog, streak };
+    } catch(error) {
+        console.error("Error fetching dashboard data", error);
+        // If the cookie is invalid, it will throw an error, so we return null
+        return null;
+    }
+}

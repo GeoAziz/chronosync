@@ -18,14 +18,25 @@ export async function POST(request: NextRequest) {
 
   try {
     const sessionCookie = await admin.auth().createSessionCookie(idToken, { expiresIn });
-    cookies().set('session', sessionCookie, {
-      maxAge: expiresIn,
+    const response = NextResponse.json({ status: 'success' });
+    
+    // Set the session cookie with proper options
+    response.cookies.set('session', sessionCookie, {
+      maxAge: expiresIn / 1000, // Convert to seconds
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       path: '/',
+      sameSite: 'lax',
     });
 
-    return NextResponse.json({ status: 'success' });
+    // Verify the cookie was set successfully
+    const verifyCookie = await admin.auth().verifySessionCookie(sessionCookie);
+    if (!verifyCookie) {
+      throw new Error('Failed to verify session cookie');
+    }
+
+    return response;
+
   } catch (error) {
     console.error('Error creating session cookie:', error);
     return NextResponse.json({ error: 'Failed to create session' }, { status: 401 });
