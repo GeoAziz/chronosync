@@ -5,7 +5,6 @@ import { WorkerDashboardClient } from './client';
 
 // All dashboard data fetching logic has been moved to /lib/get-dashboard-data.ts
 
-
 export default async function WorkerDashboardPage() {
   const data = await getDashboardData();
 
@@ -18,5 +17,4 @@ export default async function WorkerDashboardPage() {
       <WorkerDashboardClient {...data} />
     </Suspense>
   );
-}
 }

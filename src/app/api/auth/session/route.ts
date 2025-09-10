@@ -27,7 +27,15 @@ export async function POST(request: NextRequest) {
     console.log('API /api/auth/session: Session cookie created.');
     
     // Set the session cookie with proper options
-    cookies().set('session', sessionCookie, {
+    const isAdmin = decodedToken.admin === true;
+    const redirectPath = isAdmin ? '/admin/dashboard' : '/worker/dashboard';
+    console.log(`API /api/auth/session: User is ${isAdmin ? 'Admin' : 'Worker'}. Redirecting to ${redirectPath}`);
+
+    // Create the response with the redirect path
+    const response = NextResponse.json({ status: 'success', redirectPath });
+
+    // Set the session cookie with proper options
+    response.cookies.set('session', sessionCookie, {
       maxAge: expiresIn / 1000, // Convert to seconds
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -36,11 +44,7 @@ export async function POST(request: NextRequest) {
     });
     console.log('API /api/auth/session: Session cookie set in browser.');
 
-    const isAdmin = decodedToken.admin === true;
-    const redirectPath = isAdmin ? '/admin/dashboard' : '/worker/dashboard';
-    console.log(`API /api/auth/session: User is ${isAdmin ? 'Admin' : 'Worker'}. Redirecting to ${redirectPath}`);
-
-    return NextResponse.json({ status: 'success', redirectPath });
+    return response;
 
   } catch (error) {
     console.error('API /api/auth/session: Error creating session cookie:', error);
