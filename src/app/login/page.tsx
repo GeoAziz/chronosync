@@ -47,21 +47,19 @@ export default function LoginPage() {
         body: JSON.stringify({ idToken }),
       });
 
+      const sessionData = await sessionResponse.json();
+
       if (!sessionResponse.ok) {
-        const errorData = await sessionResponse.json();
-        throw new Error(errorData.error || 'Failed to create session');
+        throw new Error(sessionData.error || 'Failed to create session');
       }
-
-      const idTokenResult = await user.getIdTokenResult();
-      const isAdmin = idTokenResult.claims.admin === true;
-
+      
       toast({
         title: 'Login Successful',
         description: 'Redirecting to your dashboard...',
       });
-      
-      const redirectPath = isAdmin ? '/admin/dashboard' : '/worker/dashboard';
-      router.push(redirectPath);
+
+      // Redirect to the path sent from the server
+      router.push(sessionData.redirectPath);
 
     } catch (error: any) {
       toast({

@@ -17,11 +17,11 @@ export async function POST(request: NextRequest) {
   const expiresIn = 60 * 60 * 24 * 5 * 1000; // 5 days
 
   try {
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
     const sessionCookie = await admin.auth().createSessionCookie(idToken, { expiresIn });
-    const response = NextResponse.json({ status: 'success' });
     
     // Set the session cookie with proper options
-    response.cookies.set('session', sessionCookie, {
+    cookies().set('session', sessionCookie, {
       maxAge: expiresIn / 1000, // Convert to seconds
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -29,13 +29,10 @@ export async function POST(request: NextRequest) {
       sameSite: 'lax',
     });
 
-    // Verify the cookie was set successfully
-    const verifyCookie = await admin.auth().verifySessionCookie(sessionCookie);
-    if (!verifyCookie) {
-      throw new Error('Failed to verify session cookie');
-    }
+    const isAdmin = decodedToken.admin === true;
+    const redirectPath = isAdmin ? '/admin/dashboard' : '/worker/dashboard';
 
-    return response;
+    return NextResponse.json({ status: 'success', redirectPath });
 
   } catch (error) {
     console.error('Error creating session cookie:', error);

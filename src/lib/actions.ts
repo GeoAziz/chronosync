@@ -108,9 +108,6 @@ export async function deleteWorkerAction(workerId: string) {
     }
 }
 
-
-'use server';
-
 export async function signInAction(formData: FormData) {
     const workerId = formData.get('workerId') as string;
     const workerName = formData.get('workerName') as string;
