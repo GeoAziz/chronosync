@@ -1,3 +1,4 @@
+
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -10,7 +11,7 @@ import { Logo } from '@/components/logo';
 import { auth } from '@/lib/firebase';
 import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,20 +41,16 @@ export default function LoginPage() {
       const user = userCredential.user;
       const idToken = await user.getIdToken();
 
-      // Create session cookie
       const sessionResponse = await fetch('/api/auth/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idToken }),
-        credentials: 'include', // Important for cookie handling
       });
 
       if (!sessionResponse.ok) {
-        throw new Error('Failed to create session');
+        const errorData = await sessionResponse.json();
+        throw new Error(errorData.error || 'Failed to create session');
       }
-
-      // Wait for the session to be properly set up
-      await new Promise(resolve => setTimeout(resolve, 500));
 
       const idTokenResult = await user.getIdTokenResult();
       const isAdmin = idTokenResult.claims.admin === true;
@@ -63,9 +60,8 @@ export default function LoginPage() {
         description: 'Redirecting to your dashboard...',
       });
       
-      // Use window.location for a full page refresh
       const redirectPath = isAdmin ? '/admin/dashboard' : '/worker/dashboard';
-      window.location.href = redirectPath;
+      router.push(redirectPath);
 
     } catch (error: any) {
       toast({
@@ -165,7 +161,7 @@ export default function LoginPage() {
             </CardContent>
             <CardFooter className="flex-col gap-4 pt-4">
                 <Button type="submit" className="w-full" disabled={loading}>
-                    {loading ? 'Signing In...' : 'Sign In'}
+                    {loading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Signing In...</> : 'Sign In'}
                 </Button>
             </CardFooter>
         </form>
