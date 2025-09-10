@@ -93,7 +93,7 @@ export function WorkerDashboardClient({ worker, attendanceLog, streak, tasks }: 
                             <input type="hidden" name="workerName" value={worker.name} />
                         </>
                     )}
-                    <Button type="submit" size="lg" className="w-full sm:w-auto bg-primary/20 text-primary-foreground border border-primary hover:bg-primary/30" disabled={isSignedOut}>
+                    <Button type="submit" size="lg" className="w-full sm:w-auto bg-primary/20 text-primary-foreground border border-primary hover:bg-primary/30">
                         {isSignedIn ? <Power className="mr-2 h-5 w-5" /> : <LogIn className="mr-2 h-5 w-5" />}
                         {isSignedIn ? 'Sign Out' : 'Sign In'}
                     </Button>
