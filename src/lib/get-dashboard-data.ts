@@ -65,7 +65,14 @@ export async function getDashboardData() {
             .orderBy('deadline', 'asc')
             .get();
 
-        const tasks = tasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Task));
+        const tasks = tasksSnapshot.docs.map(doc => {
+            const data = doc.data();
+            return { 
+                id: doc.id, 
+                ...data,
+                assignedAt: (data.assignedAt as Timestamp).toDate().toISOString()
+            } as Task
+        });
         console.log(`getDashboardData: Found ${tasks.length} tasks.`);
 
 
