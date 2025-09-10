@@ -8,6 +8,69 @@ import type { Task } from '@/lib/types';
 
 initAdmin();
 
+async function calculateStreak(workerId: string): Promise<number> {
+    console.log(`getDashboardData: Calculating attendance streak for worker ${workerId}...`);
+    const logsSnapshot = await db.collection('attendance-logs')
+        .where('workerId', '==', workerId)
+        .orderBy('checkIn', 'desc')
+        .limit(30) // Look at the last 30 logs for a reasonable streak cap
+        .get();
+
+    if (logsSnapshot.empty) {
+        console.log('getDashboardData: No logs found, streak is 0.');
+        return 0;
+    }
+
+    const logDates = logsSnapshot.docs.map(doc => {
+        const checkIn = (doc.data().checkIn as Timestamp).toDate();
+        // Normalize to the start of the day
+        return new Date(checkIn.getFullYear(), checkIn.getMonth(), checkIn.getDate());
+    });
+    
+    // Remove duplicate dates (in case of multiple sign-ins in a day)
+    const uniqueLogDates = [...new Set(logDates.map(d => d.getTime()))].map(t => new Date(t));
+
+    let streak = 0;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    // Find if the latest log is for today or yesterday
+    const latestLogDate = new Date(Math.max(...uniqueLogDates.map(d => d.getTime())));
+
+    let currentDate: Date;
+    if (latestLogDate.getTime() === today.getTime()) {
+        currentDate = today;
+    } else if (latestLogDate.getTime() === yesterday.getTime()) {
+        currentDate = yesterday;
+    } else {
+        // If the latest log is not from today or yesterday, the streak is 0
+        console.log('getDashboardData: Latest log is not today or yesterday, streak is 0.');
+        return 0;
+    }
+
+    // Loop backwards from the starting date to count the streak
+    for (let i = 0; i < uniqueLogDates.length; i++) {
+        const expectedDate = new Date(currentDate);
+        expectedDate.setDate(expectedDate.getDate() - i);
+        
+        const hasLogForExpectedDate = uniqueLogDates.some(logDate => logDate.getTime() === expectedDate.getTime());
+
+        if (hasLogForExpectedDate) {
+            streak++;
+        } else {
+            // Streak is broken
+            break;
+        }
+    }
+    
+    console.log(`getDashboardData: Calculated attendance streak: ${streak} days.`);
+    return streak;
+}
+
+
 export async function getDashboardData() {
     const cookieStore = await cookies();
     const sessionCookie = cookieStore.get('session')?.value;
@@ -21,16 +84,16 @@ export async function getDashboardData() {
 
     try {
         const decodedClaims = await admin.auth().verifySessionCookie(sessionCookie, true);
-        console.log('getDashboardData: Session verified successfully, user ID:', decodedClaims.uid);
         const workerId = decodedClaims.uid;
+        console.log('getDashboardData: Session verified successfully, user ID:', workerId);
 
         const workerDoc = await db.collection('workers').doc(workerId).get();
         if (!workerDoc.exists) {
             console.error(`getDashboardData: Worker document not found in Firestore for UID: ${workerId}`);
             return null;
         }
-        console.log(`getDashboardData: Found worker document for UID: ${workerId}`);
         const worker = { id: workerDoc.id, ...workerDoc.data() } as Worker;
+        console.log(`getDashboardData: Found worker document for UID: ${workerId}`);
 
         // Fetch today's attendance log
         const today = new Date();
@@ -74,57 +137,14 @@ export async function getDashboardData() {
             } as Task
         });
         console.log(`getDashboardData: Found ${tasks.length} tasks.`);
-
-
-        // Calculate attendance streak
-        let streak = 0;
-        let consecutive = true;
-        let currentDate = new Date();
-        currentDate.setHours(0, 0, 0, 0);
-
-        // Check if there is a log for today
-        const todayStart = Timestamp.fromDate(currentDate);
-        const todayEnd = Timestamp.fromMillis(todayStart.toMillis() + 24 * 60 * 60 * 1000);
-        const todayLogSnapshot = await db.collection('attendance-logs')
-            .where('workerId', '==', workerId)
-            .where('checkIn', '>=', todayStart)
-            .where('checkIn', '<', todayEnd)
-            .get();
         
-        if (!todayLogSnapshot.empty) {
-            streak++;
-        } else {
-            consecutive = false; // No log today, streak must be 0
-        }
-
-        if (consecutive) {
-             for (let i = 1; i < 30; i++) { // Check up to 29 previous days
-                let checkDate = new Date();
-                checkDate.setDate(checkDate.getDate() - i);
-                checkDate.setHours(0,0,0,0);
-                
-                const dayStart = Timestamp.fromDate(checkDate);
-                const dayEnd = Timestamp.fromMillis(dayStart.toMillis() + 24 * 60 * 60 * 1000);
-
-                const streakLogSnapshot = await db.collection('attendance-logs')
-                    .where('workerId', '==', workerId)
-                    .where('checkIn', '>=', dayStart)
-                    .where('checkIn', '<', dayEnd)
-                    .get();
-
-                if (!streakLogSnapshot.empty) {
-                    streak++;
-                } else {
-                    break; // Streak broken
-                }
-            }
-        }
-        console.log(`getDashboardData: Calculated attendance streak: ${streak} days.`);
+        const streak = await calculateStreak(workerId);
+        
         console.log('getDashboardData: Successfully fetched all data.');
         return { worker, attendanceLog, streak, tasks };
+
     } catch(error) {
         console.error("getDashboardData: Error fetching dashboard data", error);
-        // If the cookie is invalid, it will throw an error, so we return null
         return null;
     }
 }
