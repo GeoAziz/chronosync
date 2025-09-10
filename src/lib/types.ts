@@ -17,3 +17,13 @@ export type AttendanceLog = {
     status: 'Present' | 'Late' | 'Absent';
     hours: number;
 };
+
+export type Task = {
+    id: string;
+    name: string;
+    deadline: string;
+    status: 'Not Started' | 'In Progress' | 'Completed' | 'Overdue';
+    progress: number;
+    workerId: string;
+    assignedAt: any;
+}

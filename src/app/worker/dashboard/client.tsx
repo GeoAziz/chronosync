@@ -1,15 +1,16 @@
+
 'use client';
 
 import { PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { CheckCircle2, Flame, Power, LogIn } from 'lucide-react';
-import { workerTasks } from '@/lib/mock-data';
+import { CheckCircle2, Flame, Power, LogIn, ClipboardList } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { signInAction, signOutAction } from '@/lib/actions';
-import type { AttendanceLog, Worker } from '@/lib/types';
+import type { AttendanceLog, Worker, Task } from '@/lib/types';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 const getStatusBadgeVariant = (status: string) => {
   switch (status) {
@@ -24,11 +25,12 @@ interface WorkerDashboardClientProps {
   worker: Worker;
   attendanceLog: (AttendanceLog & { id: string }) | null;
   streak: number;
+  tasks: Task[];
 }
 
-export function WorkerDashboardClient({ worker, attendanceLog, streak }: WorkerDashboardClientProps) {
+export function WorkerDashboardClient({ worker, attendanceLog, streak, tasks }: WorkerDashboardClientProps) {
   const router = useRouter();
-  const currentTask = workerTasks[0];
+  const currentTask = tasks.find(t => t.status !== 'Completed');
   const today = new Date();
   const dateString = today.toLocaleDateString('en-US', {
     weekday: 'long',
@@ -105,13 +107,26 @@ export function WorkerDashboardClient({ worker, attendanceLog, streak }: WorkerD
               <CardDescription>Your next priority assignment.</CardDescription>
             </CardHeader>
             <CardContent>
-              <h3 className="text-lg font-semibold">{currentTask.name}</h3>
-              <p className="text-sm text-muted-foreground">Deadline: {currentTask.deadline}</p>
-              <div className="mt-4 flex items-center gap-4">
-                <Progress value={currentTask.progress} className="h-2 bg-primary/20" />
-                <span className="font-semibold">{currentTask.progress}%</span>
-                <Badge variant={getStatusBadgeVariant(currentTask.status)}>{currentTask.status}</Badge>
-              </div>
+              {currentTask ? (
+                <>
+                    <h3 className="text-lg font-semibold">{currentTask.name}</h3>
+                    <p className="text-sm text-muted-foreground">Deadline: {currentTask.deadline}</p>
+                    <div className="mt-4 flex items-center gap-4">
+                        <Progress value={currentTask.progress} className="h-2 bg-primary/20" />
+                        <span className="font-semibold">{currentTask.progress}%</span>
+                        <Badge variant={getStatusBadgeVariant(currentTask.status)}>{currentTask.status}</Badge>
+                    </div>
+                </>
+              ): (
+                <div className="text-center text-muted-foreground py-8">
+                    <ClipboardList className="mx-auto h-12 w-12" />
+                    <h3 className="mt-4 text-lg font-semibold">No Pending Tasks</h3>
+                    <p className="mt-1 text-sm">All your assignments are complete. Great job!</p>
+                    <Button asChild variant="link" className="mt-2">
+                        <Link href="/worker/tasks">View all tasks</Link>
+                    </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

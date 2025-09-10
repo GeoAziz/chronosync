@@ -1,8 +1,10 @@
+
 import { cookies } from 'next/headers';
 import { db, initAdmin } from '@/lib/firebase-admin';
 import admin from 'firebase-admin';
 import { Timestamp } from 'firebase-admin/firestore';
 import type { AttendanceLog, Worker } from '@/lib/types';
+import type { Task } from '@/lib/types';
 
 initAdmin();
 
@@ -56,6 +58,16 @@ export async function getDashboardData() {
                 checkOut: data.checkOut ? (data.checkOut as Timestamp).toDate() : null,
             } as AttendanceLog & { id: string };
         }
+        
+        // Fetch tasks
+        const tasksSnapshot = await db.collection('tasks')
+            .where('workerId', '==', workerId)
+            .orderBy('deadline', 'asc')
+            .get();
+
+        const tasks = tasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Task));
+        console.log(`getDashboardData: Found ${tasks.length} tasks.`);
+
 
         // Calculate attendance streak
         let streak = 0;
@@ -102,7 +114,7 @@ export async function getDashboardData() {
         }
         console.log(`getDashboardData: Calculated attendance streak: ${streak} days.`);
         console.log('getDashboardData: Successfully fetched all data.');
-        return { worker, attendanceLog, streak };
+        return { worker, attendanceLog, streak, tasks };
     } catch(error) {
         console.error("getDashboardData: Error fetching dashboard data", error);
         // If the cookie is invalid, it will throw an error, so we return null
