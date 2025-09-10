@@ -1,60 +1,48 @@
-
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Helper function to get user's role from custom claims
-    function getRole(userId) {
-      return get(/databases/$(database)/documents/users/$(userId)).data.role;
-    }
-    
-    function isOwner(userId) {
-      return request.auth.uid == userId;
-    }
 
+    // Helper function to check if the user is an admin via custom claims.
     function isAdmin() {
-      return request.auth.token.admin == true;
+      return request.auth != null && request.auth.token.admin == true;
     }
 
-    // Workers:
-    // - Any authenticated user can list/read workers.
-    // - Only admin can create/update/delete.
+    // WORKERS: Manages user profiles.
     match /workers/{workerId} {
-      allow read: if request.auth != null;
-      allow write: if isAdmin();
+      // Any authenticated user can read the list of workers (for filtering etc.).
+      allow list: if request.auth != null;
+      // An admin can read any worker document.
+      // A user can only read their own document.
+      allow get: if request.auth.uid == workerId || isAdmin();
+      // Only admins can create, update, or delete workers.
+      allow create, update, delete: if isAdmin();
     }
 
-    // Attendance Logs:
-    // - Worker can create their own log.
-    // - Worker can only read their own logs.
-    // - Admin can read all logs.
+    // ATTENDANCE-LOGS: Tracks sign-in and sign-out events.
     match /attendance-logs/{logId} {
+      // A user can only create logs for themselves.
       allow create: if request.auth.uid == request.resource.data.workerId;
-      allow read: if isOwner(resource.data.workerId) || isAdmin();
+      // An admin can read all logs.
+      // A user can only read their own logs.
+      allow read: if isAdmin() || (request.auth.uid == resource.data.workerId);
+      // Only admins can update or delete logs.
       allow update, delete: if isAdmin();
     }
-
-    // Tasks:
-    // - Worker can only read tasks assigned to them.
-    // - Admin can create, update, delete all tasks.
+    
+    // TASKS: Manages worker assignments.
     match /tasks/{taskId} {
-       allow read: if isOwner(resource.data.workerId) || isAdmin();
-       allow write: if isAdmin();
+      // An admin can read all tasks.
+      // A user can only read tasks assigned to them.
+      allow read: if isAdmin() || (request.auth.uid == resource.data.workerId);
+      // Only admins can create, update, or delete tasks.
+      allow create, update, delete: if isAdmin();
     }
-    
-    // Settings:
-    // - Only admins can read/write organization settings
+
+    // SETTINGS: Manages organization-wide settings.
     match /settings/organization {
-        allow read, write: if isAdmin();
-    }
-    
-    // User roles: 
-    // - Only used for auth claims, should not be client-accessible for list/query.
-    // - User can read their own role.
-    match /users/{userId} {
-      allow get: if isOwner(userId) || isAdmin();
-      allow list, write: if isAdmin();
+      // Only admins can read or write settings.
+      allow read, write: if isAdmin();
     }
   }
 }
