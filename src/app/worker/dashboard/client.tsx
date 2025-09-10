@@ -76,7 +76,10 @@ export function WorkerDashboardClient({ worker, attendanceLog, streak }: WorkerD
                     </>
                 )}
               </div>
-                <form action={isSignedIn ? signOutAction : signInAction}>
+                <form action={async (formData) => {
+                    await (isSignedIn ? signOutAction(formData) : signInAction(formData));
+                    router.refresh();
+                }}>
                     {isSignedIn ? (
                         <>
                             <input type="hidden" name="logId" value={attendanceLog?.id || ''} />
