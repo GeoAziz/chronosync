@@ -9,20 +9,25 @@ initAdmin();
 export async function getDashboardData() {
     const cookieStore = await cookies();
     const sessionCookie = cookieStore.get('session')?.value;
-    console.log('Session cookie:', sessionCookie ? 'Found' : 'Not found');
+    console.log('getDashboardData: Attempting to fetch dashboard data...');
+    console.log('getDashboardData: Session cookie:', sessionCookie ? 'Found' : 'Not found');
     
     if (!sessionCookie) {
-        console.error('No session cookie found');
+        console.error('getDashboardData: No session cookie found, aborting.');
         return null;
     }
 
     try {
         const decodedClaims = await admin.auth().verifySessionCookie(sessionCookie, true);
-        console.log('Session verified, user ID:', decodedClaims.uid);
+        console.log('getDashboardData: Session verified successfully, user ID:', decodedClaims.uid);
         const workerId = decodedClaims.uid;
 
         const workerDoc = await db.collection('workers').doc(workerId).get();
-        if (!workerDoc.exists) return null;
+        if (!workerDoc.exists) {
+            console.error(`getDashboardData: Worker document not found in Firestore for UID: ${workerId}`);
+            return null;
+        }
+        console.log(`getDashboardData: Found worker document for UID: ${workerId}`);
         const worker = { id: workerDoc.id, ...workerDoc.data() } as Worker;
 
         // Fetch today's attendance log
@@ -37,6 +42,8 @@ export async function getDashboardData() {
             .where('checkIn', '<', Timestamp.fromDate(tomorrow))
             .limit(1)
             .get();
+        
+        console.log(`getDashboardData: Found ${logsSnapshot.size} attendance log(s) for today.`);
         
         let attendanceLog: (AttendanceLog & { id: string }) | null = null;
         if (!logsSnapshot.empty) {
@@ -93,10 +100,11 @@ export async function getDashboardData() {
                 }
             }
         }
-
+        console.log(`getDashboardData: Calculated attendance streak: ${streak} days.`);
+        console.log('getDashboardData: Successfully fetched all data.');
         return { worker, attendanceLog, streak };
     } catch(error) {
-        console.error("Error fetching dashboard data", error);
+        console.error("getDashboardData: Error fetching dashboard data", error);
         // If the cookie is invalid, it will throw an error, so we return null
         return null;
     }
