@@ -6,13 +6,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Calendar } from "@/components/ui/calendar";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { auth, db } from "@/lib/firebase";
 import { collection, onSnapshot, query, where, orderBy } from "firebase/firestore";
 import type { AttendanceLog } from "@/lib/types";
 import { onAuthStateChanged } from "firebase/auth";
-import { format } from "date-fns";
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths } from "date-fns";
 
 const getStatusBadgeVariant = (status: string) => {
   switch (status) {
@@ -35,6 +35,7 @@ export default function WorkerAttendancePage() {
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [logs, setLogs] = useState<MappedLog[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
+  const [filter, setFilter] = useState('this-month');
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
@@ -80,13 +81,30 @@ export default function WorkerAttendancePage() {
 
   }, [userId])
 
+  const filteredLogs = useMemo(() => {
+    const now = new Date();
+    return logs.filter(log => {
+      const logDate = log.originalDate;
+      switch (filter) {
+        case 'this-week':
+          return logDate >= startOfWeek(now) && logDate <= endOfWeek(now);
+        case 'this-month':
+          return logDate >= startOfMonth(now) && logDate <= endOfMonth(now);
+        case 'last-3-months':
+          return logDate >= subMonths(now, 3);
+        default:
+          return true;
+      }
+    });
+  }, [logs, filter]);
+
   return (
     <div className="p-4 md:p-8">
       <PageHeader
         title="My Attendance"
         description="Review your sign-in and sign-out history."
       >
-        <Select defaultValue="this-month">
+        <Select value={filter} onValueChange={setFilter}>
           <SelectTrigger className="w-[180px]">
             <SelectValue placeholder="Filter by" />
           </SelectTrigger>
@@ -115,7 +133,7 @@ export default function WorkerAttendancePage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {logs.map((entry) => (
+                  {filteredLogs.map((entry) => (
                     <TableRow key={entry.id} className={format(entry.originalDate, 'PPP') === format(new Date(), 'PPP') ? 'bg-primary/10' : ''}>
                       <TableCell className="font-medium">{entry.date}</TableCell>
                       <TableCell>{entry.checkIn}</TableCell>
@@ -138,8 +156,8 @@ export default function WorkerAttendancePage() {
               onSelect={setDate}
               className="rounded-md"
               modifiers={{
-                present: logs.filter(d => d.present).map(d => d.originalDate),
-                absent: logs.filter(d => d.absent).map(d => d.originalDate),
+                present: filteredLogs.filter(d => d.present).map(d => d.originalDate),
+                absent: filteredLogs.filter(d => d.absent).map(d => d.originalDate),
               }}
               modifiersStyles={{
                 present: {
